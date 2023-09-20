@@ -21,6 +21,7 @@ library(InSituCor)
 #### load data ---------------------------------
 
 # first, download the data from figshare:
+# https://figshare.com/articles/dataset/CosMx_6000-plex_colon_cancer_dataset/24164388
 
 
 # load the data:
