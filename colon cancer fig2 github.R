@@ -20,7 +20,6 @@ library(InSituCor)
 # first, download the data from figshare:
 # https://figshare.com/articles/dataset/CosMx_6000-plex_colon_cancer_dataset/24164388
 
-
 # load the data:
 load("colon cancer dataset.RData")
 
@@ -63,13 +62,13 @@ ligstep1 <- calcSpatialCor(counts = norm[, ligands],
 
 # get modules:
 lmods <- defineModules(condcor = ligstep1$condcor, 
-                          env = ligstep1$env, 
-                          min_module_size = 2,
-                          max_module_size = 20,
-                          resolution = 0.02,
-                          corthresh = 0.1, 
-                          min_module_cor = 0.1,
-                          gene_weighting_rule = "inverse_sqrt")
+                       env = ligstep1$env, 
+                       min_module_size = 2,
+                       max_module_size = 20,
+                       resolution = 0.02,
+                       corthresh = 0.1, 
+                       min_module_cor = 0.1,
+                       gene_weighting_rule = "inverse_sqrt")
 lmods$modules
 
 lscores =  scoreModules(counts = norm,
@@ -92,8 +91,8 @@ ligattribution <- celltype_attribution(
 
 
 p1 = pheatmap(ligattribution$involvescores,
-         col = colorRampPalette(c("white", "darkblue"))(100),
-         breaks = seq(0,0.8,length.out=101))
+              col = colorRampPalette(c("white", "darkblue"))(100),
+              breaks = seq(0,0.8,length.out=101))
 svg("results/fig 2b - attrib heatmap.svg", width = 8, height = 6)
 pheatmap(ligattribution$involvescores[p1$tree_row$order, p1$tree_col$order],
          cluster_rows = F, cluster_cols = F,
@@ -161,7 +160,7 @@ for (i in 1:5) {
 
 usegenes = names(which(colSums(step1$condcor[c(gl, gr), ] > 0) > 0))
 gr0 <- cellKlatch:::get_coregulation_network(cormat = step1$condcor[usegenes, usegenes], 
-                                corthresh = 0.1)
+                                             corthresh = 0.1)
 svg("results/fig 2h - network around LR pair.svg", width = 3, height = 3)
 par(mar = c(0,0,0,0))
 igraph::plot.igraph(gr0, 
@@ -263,3 +262,85 @@ lines(c(1.8, 2.8), rep(2.7,2), col = "white")
 text(2.3,2.6,"1 mm", cex = 0.8, col = "white")
 dev.off()
 
+
+#### insitucor within TLS's only ----------------------------
+
+# flag cells falling inside TLS's:
+annot$inTLS <- FALSE
+for (id in names(gcpolys)) {
+  temp <- sp::point.in.polygon(point.x = xy[,1], point.y = xy[,2], 
+                               pol.x <- gcpolys[[id]][, 1], pol.y <- gcpolys[[id]][, 2])
+  annot$inTLS <- annot$inTLS | (temp == 1)
+}
+
+# which genes are worth analyzing here?
+hist(log2(colMeans(norm[annot$inTLS, ])), breaks = 20)
+tlsgenes <- colnames(norm)[colMeans(norm[annot$inTLS, ]) > 0.2]
+
+# get neighbors within TLS's only:
+tlsneighbors <- InSituCor:::radiusBasedGraph(x = xy[annot$inTLS, 1], 
+                                             y = xy[annot$inTLS, 2], 
+                                             R = 0.05)
+# run insitucor:
+if (FALSE) {
+  set.seed(0)
+  tlsres <- insitucor(counts = norm[annot$inTLS, tlsgenes], 
+                      conditionon = cbind(annot[, c("nCount_RNA", "neg")], clust)[annot$inTLS, ],
+                      celltype = clust[annot$inTLS],
+                      neighbors = tlsneighbors, 
+                      corthresh = 0.3,
+                      min_module_cor = 0.3, roundcortozero = 0)
+  saveRDS(tlsres, "processed_data/TLS insitucor result.RDS")
+}
+tlsres <- readRDS("processed_data/TLS insitucor result.RDS")
+
+# explore: 
+svg("results/TLS network w names.svg", width = 8, height = 8)
+par(mar = c(0,0,0,0))
+plotCorrelationNetwork(x = tlsres$condcor,
+                       modules = tlsres$modules, 
+                       corthresh = 0.3,
+                       show_gene_names = T)
+dev.off()
+svg("results/TLS network no names.svg", width = 8, height = 8)
+par(mar = c(0,0,0,0))
+plotCorrelationNetwork(x = tlsres$condcor,
+                       modules = tlsres$modules, 
+                       corthresh = 0.3,
+                       show_gene_names = F)
+dev.off()
+
+# spatial plots of selected networks:
+xytls <- xy[annot$inTLS, ]
+xytls[xytls[,2] < 5, 2] <- xytls[xytls[,2] < 5, 2] + 3.5
+
+names = c( "IGLC1.2_IGLL1_7", "HLA.DRB_CD74_10")
+#names =  colnames(tlsres$scores_env)
+for (name in names) {
+  plot(xytls, pch = 16, cex = 0.3, asp = 1, main = name, 
+       col = colby::colby(tlsres$scores_sc[, name], type = "nonnegative")$col)
+}
+
+
+
+# does the TLS network discover genes the whole dataset doesn't?
+step1 = readRDS(file = "processed_data/step1.RDS")
+allcor <- step1$condcor[tlsgenes, tlsgenes]
+allcor[abs(allcor) < 0.1] = 0
+# plot(allcor[upper.tri(allcor)], tlsres$condcor[upper.tri(tlsres$condcor)], cex = 0.5, pch = 16, col = scales::alpha("darkblue", 0.5))
+# abline(0, 1)
+# abline(h = c(-0.1,0.1))
+# abline(v = c(-0.1,0.1))
+
+# compare the most extreme gene pairs:
+allcorvec <- as.vector(allcor)
+tlscorvec <- as.vector(tlsres$condcor)
+names(tlscorvec) <- names(allcorvec) <- paste0(rep(colnames(allcor), each = nrow(allcor)), "_", rep(colnames(allcor), nrow(allcor)))
+
+names(which((allcorvec < 0.1) & (tlscorvec > 0.5)))
+names(which((allcorvec > 0.5) & (tlscorvec > 0.1)))
+
+sum((allcorvec < 0.1) & (tlscorvec > 0.5)) / 2
+sum((allcorvec > 0.5) & (tlscorvec < 0.1)) / 2
+sum(tlscorvec > 0.5) / 2
+sum(allcorvec > 0.5) / 2

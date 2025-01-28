@@ -23,7 +23,6 @@ library(InSituCor)
 # first, download the data from figshare:
 # https://figshare.com/articles/dataset/CosMx_6000-plex_colon_cancer_dataset/24164388
 
-
 # load the data:
 load("colon cancer dataset.RData")
 
@@ -415,4 +414,81 @@ for (name in names(attribution$attributionmats)) {
            breaks = seq(0,1,length.out=101))
 }
 dev.off()
+
+#### hub analysis ---------------------------------------
+
+# identify hubs from each module:
+tophubs <- list()
+for (name in unique(res$modules$module)) {
+  genes <- res$modules$gene[res$modules$module == name]
+  graph <-  InSituCor:::get_coregulation_network(cormat = res$condcor[genes, genes],
+                                                 corthresh = 0.1)
+  hubs <- hub_score(graph = graph, scale = TRUE, weights = NULL, options = arpack_defaults)
+  tophubs[[name]] = names(hubs$vector)[order(hubs$vector, decreasing = T)[1:3]]
+}
+tophubs[1:10]
+
+# overall hubs:
+graph <-  InSituCor:::get_coregulation_network(cormat = res$condcor,
+                                               corthresh = 0.1)
+hubs <- hub_score(graph = graph, scale = TRUE, weights = NULL, options = arpack_defaults)
+hubgenes <- names(hubs$vector)[hubs$vector > 0.3]
+table(res$modules$module[match(hubgenes, res$modules$gene)])
+
+
+#### gene set analysis ----------------------------------
+
+modules <- readRDS("processed_data/modules.RDS")$modules
+wts <- readRDS("processed_data/modules.RDS")$weightsdf
+
+library(fgsea)
+library(reactome.db)
+library(org.Hs.eg.db)
+library(GSEABase)
+
+# get entrez names:
+gene_entrez <- mapIds(org.Hs.eg.db, keys=colnames(raw), 
+                      column="ENTREZID", keytype="SYMBOL", multiVals="first")
+module_entrez <- mapIds(org.Hs.eg.db, keys=modules[["SFRP2_CCL18_17"]], 
+                        column="ENTREZID", keytype="SYMBOL", multiVals="first")
+score <- rep(0, ncol(raw))
+names(score) = colnames(raw)
+score[modules[["SFRP2_CCL18_17"]]] <- wts$weight[match(modules[["SFRP2_CCL18_17"]], wts$gene)]
+# Name the vector with Entrez IDs instead of gene symbols
+names(score) <- gene_entrez
+# Extract Reactome pathways
+reactome_pathways <- reactomePATHID2EXTID
+# Convert to a list of pathways
+reactome_list <- as.list(reactome_pathways)
+# Filter to human-specific pathways
+reactome_list <- reactome_list[grep("^R-HSA-", names(reactome_list))]
+
+# restrict to only available genes:
+for (name in names(reactome_list)) {
+  reactome_list[[name]] <- intersect(reactome_list[[name]], gene_entrez)
+  if (length(reactome_list[[name]]) < 10) {
+    reactome_list[[name]] = NULL
+  }
+}
+# score overlap:
+pathscores <- c()
+for (name in names(reactome_list)) {
+  pathscores[name] = mean(is.element(reactome_list[[name]], module_entrez))
+}
+hist(pathscores)
+pathscores <- pathscores[!is.na(pathscores)]
+pathscores[order(pathscores, decreasing = T)[1:10]]
+
+# name top pathways (>10% in module)
+select(
+  reactome.db,
+  keys = names(pathscores)[pathscores > 0.1],
+  keytype = "PATHID",
+  columns = "PATHNAME"
+)
+#         PATHID                                              PATHNAME
+# 1  R-HSA-166663        Homo sapiens: Initial triggering of complement
+# 2  R-HSA-140875 Homo sapiens: Common Pathway of Fibrin Clot Formation
+# 3 R-HSA-1592389 Homo sapiens: Activation of Matrix Metalloproteinases
+
 
