@@ -6,9 +6,10 @@ library(pheatmap)
 
 #### load dataset -----------------------------
 
-# (data available upon request)
-load("~//NAS_data/lwu/testRun/SpatialTest/giotto_test/SMITAP_proj/MGH_WillHwang_PDAC_2023Jan/rnaRes/rna_postQC_fundamental_data.RData")
-metadata <- read.csv("~//NAS_data/lwu/testRun/SpatialTest/giotto_test/SMITAP_proj/MGH_WillHwang_PDAC_2023Jan/rnaRes/cellType_summary/all_celltyping_final_clus.csv")
+# first, download the data from figshare: 
+# https://figshare.com/articles/dataset/CosMx_6000-plex_PDAC_dataset/28299497
+load("CosMx 6k PDAC fundamental data.RData")
+metadata <- read.csv("all_celltyping_final_clus.csv")
 
 # how many cells per core?
 table(metadata$TMA_coreID)
